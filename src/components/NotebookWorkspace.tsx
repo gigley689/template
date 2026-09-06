@@ -21,7 +21,6 @@ import {
   Check,
   Play,
   Pause,
-  Volume2,
   BookOpen,
   Mic2,
   Globe,
@@ -269,6 +268,8 @@ export default function NotebookWorkspace({ notebook, onBack, onSignOut }: Noteb
 
       const fileType: Document['type'] = file.type.startsWith('image/')
         ? 'image'
+        : file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+        ? 'pdf'
         : 'file';
 
       const { data, error } = await supabase
@@ -471,7 +472,7 @@ export default function NotebookWorkspace({ notebook, onBack, onSignOut }: Noteb
       setAudioUrl(url);
     } catch (error) {
       console.error('Error generating audio:', error);
-      setAudioError(error.message || 'Unknown error');
+      setAudioError(error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setGeneratingAudio(false);
     }
@@ -776,6 +777,8 @@ function SourcesView({
         return <LinkIcon className="w-5 h-5" />;
       case 'image':
         return <FileIcon className="w-5 h-5" />;
+      case 'pdf':
+        return <FileText className="w-5 h-5" />;
       default:
         return <FileText className="w-5 h-5" />;
     }

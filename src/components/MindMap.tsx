@@ -46,9 +46,21 @@ const H_GAP = 60;
 const V_GAP = 16;
 const MAX_LABEL_CHARS = 40;
 
+function stripCodeFences(raw: string): string {
+  let s = raw.trim();
+  const fenceMatch = s.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i);
+  if (fenceMatch) {
+    s = fenceMatch[1].trim();
+  } else {
+    s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  }
+  return s;
+}
+
 function parseMindMap(raw: string): MindMapData | null {
+  const cleaned = stripCodeFences(raw);
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(cleaned);
     if (parsed && parsed.central && Array.isArray(parsed.nodes)) {
       return parsed;
     }

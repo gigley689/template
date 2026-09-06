@@ -19,10 +19,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+// Extract text from a PDF file (ArrayBuffer) using pdf-parse.
+// Falls back to a regex-based text stream extraction if the library fails.
+async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  try {
+    const pdfParse = await import("npm:pdf-parse@1.1.1");
+    const data = await pdfParse.default(new Uint8Array(buffer));
+    return data.text || '';
+  } catch (err) {
+    console.error("pdf-parse failed, using fallback:", err.message);
+    // Fallback: extract text from PDF streams using regex
+    const text = new TextDecoder().decode(buffer);
+    // Match text between BT and ET markers (text objects)
+    const textMatches = text.match(/\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*Tj/g);
+    if (textMatches) {
+      return textMatches
+        .map(m => m.replace(/^\(|\)\s*Tj$/g, '').replace(/\\([nrt()\\])/g, '$1'))
+        .join(' ');
+    }
+    return '';
+  }
+}
+
 async function fetchWebContent(url: string): Promise<string> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     const response = await fetch(url, {
       signal: controller.signal,
@@ -35,6 +57,18 @@ async function fetchWebContent(url: string): Promise<string> {
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+
+    // Handle PDF content
+    if (contentType.includes('application/pdf') || url.toLowerCase().endsWith('.pdf')) {
+      const buffer = await response.arrayBuffer();
+      const pdfText = await extractPdfText(buffer);
+      if (pdfText.length > 10000) {
+        return pdfText.substring(0, 10000) + '...';
+      }
+      return pdfText || `[PDF file could not be parsed: ${url}]`;
     }
 
     const html = await response.text();
@@ -492,15 +526,29 @@ Deno.serve(async (req: Request) => {
       } else if (source.type === 'image' && source.file_url) {
         sourceContent = `[${source.name}]:\n[Image file uploaded]`;
       } else if (source.file_url) {
-        if (source.file_url.endsWith('.txt') || source.file_url.endsWith('.md')) {
+        const fileUrl = source.file_url;
+        const lowerUrl = fileUrl.toLowerCase();
+        if (lowerUrl.endsWith('.txt') || lowerUrl.endsWith('.md')) {
           try {
-            const response = await fetch(source.file_url);
+            const response = await fetch(fileUrl);
             if (response.ok) {
               const text = await response.text();
-              sourceContent = `[${source.name}]:\n${text.substring(0, 5000)}`;
+              sourceContent = `[${source.name}]:\n${text.substring(0, 10000)}`;
             }
           } catch {
-            sourceContent = `[${source.name}]:\n[File: ${source.file_url}]`;
+            sourceContent = `[${source.name}]:\n[File: ${fileUrl}]`;
+          }
+        } else if (lowerUrl.endsWith('.pdf') || source.type === 'pdf') {
+          try {
+            const response = await fetch(fileUrl);
+            if (response.ok) {
+              const buffer = await response.arrayBuffer();
+              const pdfText = await extractPdfText(buffer);
+              const truncated = pdfText.length > 10000 ? pdfText.substring(0, 10000) + '...' : pdfText;
+              sourceContent = `[${source.name}]:\n${truncated || '[PDF file - no text could be extracted]'}`;
+            }
+          } catch {
+            sourceContent = `[${source.name}]:\n[PDF file: ${fileUrl}]`;
           }
         } else {
           sourceContent = `[${source.name}]:\n[File uploaded: ${source.type}]`;

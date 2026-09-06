@@ -53,12 +53,26 @@ function makeCardId(card: Flashcard): string {
   return `${card.topic}::${card.front}`.slice(0, 100);
 }
 
+function stripCodeFences(raw: string): string {
+  let s = raw.trim();
+  // Remove markdown code fences: ```json ... ``` or ``` ... ```
+  const fenceMatch = s.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i);
+  if (fenceMatch) {
+    s = fenceMatch[1].trim();
+  } else {
+    // Handle cases where fences are present but not at the very start/end
+    s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  }
+  return s;
+}
+
 function parseFlashcards(raw: string): Flashcard[] {
+  const cleaned = stripCodeFences(raw);
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(cleaned);
     if (parsed && Array.isArray(parsed.cards)) {
       return parsed.cards.filter(
-        (c: Flashcard) => c && c.front && c.back && c.topic,
+        (c: Flashcard) => c.front && c.back && c.topic,
       );
     }
   } catch {
